@@ -1,0 +1,12 @@
+# 只在 src/ 下忽略编译产物；module/preinit/*.ko 是发布用的预编译文件，必须保留
+src/**/*.o
+src/**/*.ko
+src/**/*.mod
+src/**/*.mod.c
+src/**/.*.cmd
+src/Module.symvers
+src/modules.order
+
+# 编辑器/系统
+.DS_Store
+*.swp
