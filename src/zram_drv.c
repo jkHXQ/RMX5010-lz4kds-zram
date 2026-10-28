@@ -144,6 +144,7 @@ static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 			  struct bio *parent);
 static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 			  u32 index, int offset, struct bio *bio);
+static int lz4kds_codec_selftest(void);
 
 
 static int zram_slot_trylock(struct zram *zram, u32 index)
@@ -2370,6 +2371,36 @@ static ssize_t disksize_store(struct device *dev,
 		sddc_enabled = (zram->sddc != NULL);
 
 	up_write(&zram->init_lock);
+
+	/*
+	 * A runtime switch to lz4kds never went through the boot-time codec test,
+	 * so selftest_codec would stay at -1 and the UI cannot tell whether the
+	 * algorithm in use was ever verified.  Re-run it here whenever lz4kds is
+	 * the active algorithm and the result is not a pass yet.
+	 */
+	if (zram->comp_algs[ZRAM_PRIMARY_COMP] &&
+	    !strcmp(zram->comp_algs[ZRAM_PRIMARY_COMP], "lz4kds") &&
+	    READ_ONCE(selftest_codec) != 0) {
+		int codec_ret = lz4kds_codec_selftest();
+
+		WRITE_ONCE(selftest_codec, codec_ret);
+		if (codec_ret) {
+			pr_err("%s: lz4kds codec self test failed (%d), disabling SDDC\n",
+			       zram->disk->disk_name, codec_ret);
+			if (sddc_enabled) {
+				down_write(&zram->init_lock);
+				mutex_lock(&zram->sddc_lifecycle_lock);
+				crystal_sddc_stop(zram);
+				crystal_sddc_destroy(zram);
+				mutex_unlock(&zram->sddc_lifecycle_lock);
+				up_write(&zram->init_lock);
+				sddc_enabled = false;
+			}
+		} else {
+			pr_info("%s: lz4kds codec self test passed\n",
+				zram->disk->disk_name);
+		}
+	}
 
 	/*
 	 * The device is usable and not yet swapon'ed: run one real write/read

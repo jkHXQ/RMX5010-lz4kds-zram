@@ -381,9 +381,19 @@ function mbFromKB(kb) {
   return n ? (n / 1024).toFixed(0) + ' MiB' : '0 MiB';
 }
 
-function selfText(v) {
-  if (v === '' || v === undefined) return '未运行';
-  return Number(v) === 0 ? '通过' : '失败（' + v + '）';
+function selfState(v) {
+  if (v === '' || v === undefined || v === null) return 'skip';
+  const n = Number(v);
+  /* 只有初值 -1 表示“本次开机未运行”，其它负数都是真实错误码 */
+  if (!Number.isFinite(n) || n === -1) return 'skip';
+  return n === 0 ? 'ok' : 'bad';
+}
+
+function selfLabel(v) {
+  const s = selfState(v);
+  if (s === 'ok') return '通过';
+  if (s === 'bad') return '失败（' + v + '）';
+  return '未运行';
 }
 
 async function refresh() {
@@ -428,8 +438,16 @@ async function refresh() {
   de.style.color = d ? 'var(--bad)' : 'var(--ok)';
 
   const se = $('self');
-  se.textContent = '压缩 ' + selfText(m.codec) + ' · 读写 ' + selfText(m.io);
-  se.style.color = (Number(m.codec) === 0 && Number(m.io) === 0) ? 'var(--ok)' : 'var(--warn)';
+  /* 自检只对 lz4kds 有意义：换了其它算法时不再报“失败/未运行”，直接标为不适用 */
+  if (m.comp !== 'lz4kds') {
+    se.textContent = '当前算法 ' + (m.comp || '-') + ' 无需自检';
+    se.style.color = 'var(--dim)';
+  } else {
+    const cs = selfState(m.codec), rs = selfState(m.io);
+    se.textContent = '压缩 ' + selfLabel(m.codec) + ' · 读写 ' + selfLabel(m.io);
+    se.style.color = (cs === 'bad' || rs === 'bad') ? 'var(--bad)'
+      : (cs === 'ok' && rs === 'ok') ? 'var(--ok)' : 'var(--dim)';
+  }
 
   if (m.cfg_size && m.disksize &&
       Math.round(Number(m.disksize) / 1048576) !== Number(m.cfg_size)) {
