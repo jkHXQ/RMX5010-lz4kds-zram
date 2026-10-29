@@ -16,34 +16,23 @@
 #include "lz4kd/lz4kd.h"
 #include "sddc/crystal_sddc_codec.h"
 
+/*
+ * The list must not depend on the build-time crypto config: the vendor kernel
+ * registers lz4k/zstdn/zstdn_o at runtime, and availability is decided by
+ * zcomp_available_algorithm()/crypto_has_comp() instead.
+ */
 static const char * const backends[] = {
 	"lz4kd",
 	"lz4kds",
-#if IS_ENABLED(CONFIG_CRYPTO_LZO)
 	"lzo",
 	"lzo-rle",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_LZ4)
 	"lz4",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_LZ4HC)
 	"lz4hc",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_842)
 	"842",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_ZSTD)
 	"zstd",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_LZ4K)
 	"lz4k",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_ZSTDN)
 	"zstdn",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_ZSTDN_O)
 	"zstdn_o",
-#endif
 };
 
 static void zcomp_strm_free(struct zcomp_strm *zstrm)
@@ -135,6 +124,10 @@ ssize_t zcomp_available_show(const char *comp, char *buf)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(backends); i++) {
+		/* Skip backends this kernel/device does not register at runtime. */
+		if (strcmp(backends[i], "lz4kd") && strcmp(backends[i], "lz4kds") &&
+		    crypto_has_comp(backends[i], 0, 0) != 1)
+			continue;
 		if (!strcmp(comp, backends[i])) {
 			known_algorithm = true;
 			sz += scnprintf(buf + sz, PAGE_SIZE - sz - 2,
